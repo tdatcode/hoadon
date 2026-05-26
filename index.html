@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tự động nhập hóa đơn – Lucky Star</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1f2937;
+    --border: #30363d;
+    --accent: #00d4aa;
+    --accent2: #0ea5e9;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --success: #22c55e;
+    --text: #e6edf3;
+    --muted: #7d8590;
+    --card: #1c2128;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Be Vietnam Pro', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* grid bg */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,170,.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,170,.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+  /* Header */
+  header {
+    border-bottom: 1px solid var(--border);
+    background: rgba(13,17,23,.85);
+    backdrop-filter: blur(12px);
+    position: sticky; top: 0; z-index: 100;
+    padding: 16px 0;
+  }
+  .header-inner { display: flex; align-items: center; gap: 16px; }
+  .logo {
+    width: 38px; height: 38px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .header-text h1 { font-size: 16px; font-weight: 700; }
+  .header-text p { font-size: 12px; color: var(--muted); }
+  .badge {
+    margin-left: auto;
+    background: rgba(0,212,170,.12);
+    color: var(--accent);
+    border: 1px solid rgba(0,212,170,.25);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Main layout */
+  main { padding: 40px 0 80px; }
+
+  /* Drop zone */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 16px;
+    background: var(--card);
+    padding: 56px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .25s;
+    position: relative;
+    overflow: hidden;
+  }
+  .drop-zone::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(circle at 50% 0%, rgba(0,212,170,.06), transparent 70%);
+    pointer-events: none;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(0,212,170,.04);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0,212,170,.08);
+  }
+  .drop-icon { font-size: 48px; margin-bottom: 16px; filter: drop-shadow(0 0 12px rgba(0,212,170,.3)); }
+  .drop-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+  .drop-sub { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+  .btn-upload {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #000;
+    font-weight: 700;
+    font-size: 14px;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    cursor: pointer;
+    transition: opacity .2s, transform .15s;
+  }
+  .btn-upload:hover { opacity: .9; transform: translateY(-1px); }
+  #file-input { display: none; }
+
+  /* File queue */
+  .section-title {
+    font-size: 13px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--muted);
+    margin: 32px 0 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  .file-list { display: flex; flex-direction: column; gap: 8px; }
+  .file-item {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: border-color .2s;
+    animation: slideIn .2s ease;
+  }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+  .file-item.processing { border-color: var(--accent2); }
+  .file-item.done { border-color: var(--success); }
+  .file-item.error { border-color: var(--danger); }
+
+  .file-icon { font-size: 22px; flex-shrink: 0; }
+  .file-info { flex: 1; min-width: 0; }
+  .file-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file-status { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .file-badge {
+    font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+    padding: 3px 8px; border-radius: 4px;
+    flex-shrink: 0;
+  }
+  .badge-wait { background: rgba(125,133,144,.15); color: var(--muted); }
+  .badge-proc { background: rgba(14,165,233,.15); color: var(--accent2); }
+  .badge-done { background: rgba(34,197,94,.15); color: var(--success); }
+  .badge-err { background: rgba(239,68,68,.15); color: var(--danger); }
+
+  /* Progress bar */
+  .progress-bar { height: 2px; background: var(--border); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 2px; transition: width .3s; }
+
+  /* Result table */
+  .table-wrap {
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    overflow: auto;
+    max-height: 420px;
+  }
+  table {
+    width: 100%; border-collapse: collapse;
+    font-size: 12px; min-width: 900px;
+  }
+  thead { position: sticky; top: 0; z-index: 10; background: var(--surface); }
+  th {
+    padding: 10px 14px; text-align: left;
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .8px;
+    color: var(--muted); border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  td {
+    padding: 10px 14px; border-bottom: 1px solid rgba(48,54,61,.5);
+    color: var(--text); white-space: nowrap;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+
+  td.editable { cursor: pointer; }
+  td.editable:hover { background: rgba(0,212,170,.05) !important; }
+  td input.cell-input {
+    background: rgba(0,212,170,.08);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 2px 6px;
+    width: 100%;
+    outline: none;
+  }
+
+  .num { color: var(--accent); }
+  .stt { color: var(--muted); text-align: center; }
+
+  /* Actions */
+  .actions {
+    display: flex; gap: 12px; align-items: center;
+    margin-top: 20px; flex-wrap: wrap;
+  }
+  .btn {
+    padding: 10px 22px; border-radius: 8px;
+    font-size: 13px; font-weight: 700;
+    cursor: pointer; border: none; transition: all .2s;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #000;
+  }
+  .btn-primary:hover { transform: translateY(-1px); opacity: .9; }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+  .btn-ghost {
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+  .stats {
+    margin-left: auto;
+    display: flex; gap: 20px;
+  }
+  .stat { text-align: right; }
+  .stat-val { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 600; color: var(--accent); }
+  .stat-lbl { font-size: 10px; color: var(--muted); }
+
+  /* API key panel */
+  .api-panel {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px; margin-bottom: 28px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .api-icon { font-size: 24px; }
+  .api-label { font-size: 13px; font-weight: 600; }
+  .api-sub { font-size: 11px; color: var(--muted); }
+  .api-input {
+    flex: 1; min-width: 240px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; padding: 8px 12px;
+    outline: none; transition: border-color .2s;
+  }
+  .api-input:focus { border-color: var(--accent); }
+  .api-save {
+    background: rgba(0,212,170,.12); color: var(--accent);
+    border: 1px solid rgba(0,212,170,.3);
+    border-radius: 8px; padding: 8px 16px;
+    font-size: 12px; font-weight: 700; cursor: pointer;
+    transition: all .2s;
+  }
+  .api-save:hover { background: rgba(0,212,170,.2); }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 28px; right: 28px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 18px;
+    font-size: 13px; display: flex; gap: 10px; align-items: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,.4);
+    animation: toastIn .3s ease; z-index: 999;
+    max-width: 320px;
+  }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent2);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .help-note {
+    background: rgba(245,158,11,.06);
+    border: 1px solid rgba(245,158,11,.2);
+    border-radius: 8px; padding: 12px 16px;
+    font-size: 12px; color: rgba(245,158,11,.9);
+    margin-top: 12px; line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <div class="header-inner">
+      <div class="logo">📄</div>
+      <div class="header-text">
+        <h1>Invoice Auto-Entry</h1>
+        <p>Lucky Star – Nhập hóa đơn đầu vào tự động</p>
+      </div>
+      <div class="badge" id="counter-badge">0 hóa đơn</div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+
+    <!-- API Key -->
+    <div class="api-panel">
+      <div class="api-icon">🔑</div>
+      <div>
+        <div class="api-label">Anthropic API Key</div>
+        <div class="api-sub">Dùng để đọc & trích xuất dữ liệu hóa đơn bằng AI</div>
+      </div>
+      <input class="api-input" type="password" id="api-key" placeholder="sk-ant-..." />
+      <button class="api-save" onclick="saveKey()">Lưu key</button>
+    </div>
+
+    <!-- Drop zone -->
+    <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+      <div class="drop-icon">📂</div>
+      <div class="drop-title">Kéo thả file hóa đơn PDF vào đây</div>
+      <div class="drop-sub">Hỗ trợ nhiều file cùng lúc · Xử lý tuần tự tự động</div>
+      <button class="btn-upload" onclick="event.stopPropagation(); document.getElementById('file-input').click()">
+        Chọn file PDF
+      </button>
+    </div>
+    <input type="file" id="file-input" accept=".pdf" multiple />
+
+    <div class="help-note">
+      💡 <strong>Cách dùng:</strong> (1) Nhập API key Anthropic ở trên → Lưu. (2) Kéo thả hoặc chọn các file PDF hóa đơn. (3) AI tự động đọc & điền dữ liệu. (4) Kiểm tra bảng, chỉnh sửa nếu cần. (5) Xuất Excel đúng format.
+    </div>
+
+    <!-- File queue -->
+    <div id="file-queue-wrap" style="display:none">
+      <div class="section-title">Danh sách file</div>
+      <div class="file-list" id="file-list"></div>
+    </div>
+
+    <!-- Result table -->
+    <div id="result-wrap" style="display:none">
+      <div class="section-title">Kết quả trích xuất</div>
+      <div class="table-wrap">
+        <table id="result-table">
+          <thead>
+            <tr>
+              <th>STT</th>
+              <th>Ngày</th>
+              <th>Nhà cung cấp</th>
+              <th>Số HĐ</th>
+              <th>Trước VAT (VND)</th>
+              <th>% VAT</th>
+              <th>Tiền VAT</th>
+              <th>Sau VAT</th>
+              <th>Hàng hóa / Dịch vụ</th>
+              <th>Loại HĐ</th>
+              <th>Loại chi phí</th>
+              <th>Phân loại</th>
+            </tr>
+          </thead>
+          <tbody id="result-body"></tbody>
+        </table>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-ghost" onclick="clearAll()">🗑 Xóa tất cả</button>
+        <button class="btn btn-primary" id="export-btn" onclick="exportExcel()">
+          📥 Xuất Excel (.xlsx)
+        </button>
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-val" id="stat-count">0</div>
+            <div class="stat-lbl">hóa đơn</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val" id="stat-total">0</div>
+            <div class="stat-lbl">tổng sau VAT</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+const COLS = ['Ngày','Nhà cung cấp','Số HĐ','Trước VAT','% VAT','Tiền VAT','Sau VAT','Hàng hóa','Loại HĐ','Loại chi phí','Phân loại'];
+
+let rows = [];
+let queue = [];
+let processing = false;
+
+// ---- API Key ----
+function saveKey() {
+  const k = document.getElementById('api-key').value.trim();
+  if (!k) { showToast('⚠️ Vui lòng nhập API key', 'warn'); return; }
+  localStorage.setItem('ls_api_key', k);
+  showToast('✅ Đã lưu API key', 'ok');
+}
+window.addEventListener('load', () => {
+  const k = localStorage.getItem('ls_api_key');
+  if (k) document.getElementById('api-key').value = k;
+});
+
+// ---- Drag & Drop ----
+const dz = document.getElementById('drop-zone');
+['dragover','dragenter'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add('drag-over'); }));
+['dragleave','drop'].forEach(e => dz.addEventListener(e, ev => { dz.classList.remove('drag-over'); }));
+dz.addEventListener('drop', ev => { ev.preventDefault(); addFiles(ev.dataTransfer.files); });
+document.getElementById('file-input').addEventListener('change', e => addFiles(e.target.files));
+
+function addFiles(files) {
+  const pdfs = [...files].filter(f => f.type === 'application/pdf' || f.name.endsWith('.pdf'));
+  if (!pdfs.length) { showToast('⚠️ Chỉ hỗ trợ file PDF', 'warn'); return; }
+  pdfs.forEach(f => {
+    const id = Date.now() + Math.random();
+    queue.push({ id, file: f, status: 'wait' });
+    renderFileItem({ id, file: f, status: 'wait' });
+  });
+  document.getElementById('file-queue-wrap').style.display = '';
+  if (!processing) processQueue();
+}
+
+function renderFileItem(item) {
+  const el = document.createElement('div');
+  el.className = 'file-item';
+  el.id = 'fi-' + item.id;
+  el.innerHTML = `
+    <span class="file-icon">📄</span>
+    <div class="file-info">
+      <div class="file-name">${item.file.name}</div>
+      <div class="file-status" id="fs-${item.id}">Chờ xử lý…</div>
+      <div class="progress-bar"><div class="progress-fill" id="fp-${item.id}" style="width:0%"></div></div>
+    </div>
+    <span class="file-badge badge-wait" id="fb-${item.id}">CHỜ</span>
+  `;
+  document.getElementById('file-list').appendChild(el);
+}
+
+function updateFileItem(id, status, msg) {
+  const el = document.getElementById('fi-' + id);
+  const fb = document.getElementById('fb-' + id);
+  const fs = document.getElementById('fs-' + id);
+  const fp = document.getElementById('fp-' + id);
+  if (!el) return;
+  el.className = 'file-item ' + ({wait:'',processing:'processing',done:'done',error:'error'}[status]||'');
+  fb.className = 'file-badge ' + ({wait:'badge-wait',processing:'badge-proc',done:'badge-done',error:'badge-err'}[status]);
+  fb.textContent = {wait:'CHỜ',processing:'ĐANG XỬ LÝ',done:'XONG',error:'LỖI'}[status];
+  fs.textContent = msg;
+  fp.style.width = {wait:'0%',processing:'60%',done:'100%',error:'100%'}[status];
+  if (status === 'error') fp.style.background = 'var(--danger)';
+}
+
+// ---- Process queue ----
+async function processQueue() {
+  processing = true;
+  for (const item of queue) {
+    if (item.status !== 'wait') continue;
+    item.status = 'processing';
+    updateFileItem(item.id, 'processing', 'Đang đọc & trích xuất…');
+    try {
+      const extracted = await extractInvoice(item.file);
+      rows.push(...extracted);
+      item.status = 'done';
+      updateFileItem(item.id, 'done', `Trích xuất ${extracted.length} dòng thành công`);
+      renderTable();
+    } catch(err) {
+      item.status = 'error';
+      updateFileItem(item.id, 'error', err.message || 'Lỗi xử lý');
+    }
+  }
+  processing = false;
+  updateBadge();
+}
+
+// ---- Extract via OpenAI Text API (Extract PDF text first) ----
+async function extractInvoice(file) {
+  const apiKey = document.getElementById('api-key').value.trim() || localStorage.getItem('ls_api_key');
+  if (!apiKey) throw new Error('Chưa có API key – vui lòng nhập và lưu key');
+
+  // Extract text from PDF
+  const pdfText = await extractTextFromPDF(file);
+  if (!pdfText.trim()) throw new Error('Không đọc được nội dung PDF');
+
+  const prompt = `Bạn là chuyên gia kế toán Việt Nam. Đây là nội dung text từ hóa đơn. Hãy trích xuất dữ liệu và trả về JSON array (không có markdown, không có giải thích).
+
+QUY TẮC TRÍCH XUẤT (QUAN TRỌNG):
+- Luôn trả về ĐÚNG 1 phần tử JSON duy nhất cho mỗi hóa đơn (bất kể hóa đơn có bao nhiêu sản phẩm)
+- Tên sản phẩm: Lấy TÊN SẢN PHẨM ĐẦU TIÊN (bỏ những sản phẩm tiếp theo)
+- Số tiền: Lấy TỔNG TIỀN của CẢ HÓA ĐƠN (trong bảng tổng cộng ở phía dưới)
+- VAT: Lấy tổng VAT của cả hóa đơn
+- Phân loại: Dựa vào sản phẩm đầu tiên
+
+Format JSON (trả về 1 phần tử duy nhất trong array):
+{
+  "ngay": "DD/MM/YYYY",
+  "nha_cung_cap": "TÊN CÔNG TY IN HOA",
+  "so_hd": "số hóa đơn",
+  "truoc_vat": số_nguyên (tổng tiền trước VAT của cả hóa đơn),
+  "pct_vat": số_thập_phân (ví dụ 0.08 hoặc 0.1 hoặc 0.05 hoặc 0),
+  "tien_vat": số_nguyên (tổng VAT của cả hóa đơn),
+  "sau_vat": số_nguyên (tổng tiền sau VAT của cả hóa đơn),
+  "hang_hoa": "mô tả sản phẩm/dịch vụ đầu tiên CHỈ",
+  "loai_hd": "Điện tử",
+  "loai_chi_phi": "Chi phí nguyên liệu" HOẶC "Chi phí dịch vụ" HOẶC "Chi phí TSCĐ",
+  "phan_loai": "Hóa chất" HOẶC "Bao bì" HOẶC "Thành phẩm" HOẶC "Phí sàn" HOẶC "Phí QC" HOẶC "Vận chuyển" HOẶC "Khác"
+}
+
+Quy tắc phân loại (dựa trên sản phẩm đầu tiên):
+- TikTok, Google, Facebook, Meta = Phí QC, Chi phí dịch vụ
+- Lazada (RECESS), Shopee, TikTok Shop, Selly = Phí sàn, Chi phí dịch vụ
+- Nguyên liệu hóa chất, mỹ phẩm = Hóa chất, Chi phí nguyên liệu
+- Bao bì, chai lọ, nhựa = Bao bì, Chi phí nguyên liệu
+- Vận chuyển, logistics = Vận chuyển, Chi phí dịch vụ
+- Điện, nước, viễn thông, văn phòng = Khác, Chi phí dịch vụ
+- Máy móc, thiết bị = Khác, Chi phí TSCĐ
+
+NỘI DUNG HÓA ĐƠN:
+${pdfText}
+
+Chỉ trả về JSON array với ĐÚNG 1 phần tử duy nhất (không có gì khác).`;
+
+  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json', 
+      'Authorization': 'Bearer ' + apiKey
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      max_tokens: 2000,
+      messages: [{
+        role: 'user',
+        content: prompt
+      }]
+    })
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API lỗi ${resp.status}`);
+  }
+  const data = await resp.json();
+  const text = data.choices[0].message.content;
+  const clean = text.replace(/```json|```/g, '').trim();
+  let parsed;
+  try { parsed = JSON.parse(clean); } catch { throw new Error('AI trả về dữ liệu không hợp lệ'); }
+  if (!Array.isArray(parsed)) parsed = [parsed];
+  return parsed;
+}
+
+// Extract text from PDF
+async function extractTextFromPDF(file) {
+  const pdfjsLib = window['pdfjs-dist/build/pdf'];
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  
+  try {
+    const arrayBuffer = await fileToArrayBuffer(file);
+    const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+    let fullText = '';
+    
+    for (let i = 1; i <= Math.min(pdf.numPages, 5); i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      fullText += pageText + '\n';
+    }
+    
+    return fullText;
+  } catch(e) {
+    throw new Error('Lỗi đọc PDF: ' + e.message);
+  }
+}
+
+function fileToArrayBuffer(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(new Error('Không đọc được file'));
+    r.readAsArrayBuffer(file);
+  });
+}
+
+// ---- Render table ----
+function renderTable() {
+  if (!rows.length) { document.getElementById('result-wrap').style.display = 'none'; return; }
+  document.getElementById('result-wrap').style.display = '';
+  const tbody = document.getElementById('result-body');
+  tbody.innerHTML = '';
+
+  rows.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="stt">${i+1}</td>
+      ${makeCell(i,'ngay')}
+      ${makeCell(i,'nha_cung_cap')}
+      ${makeCell(i,'so_hd')}
+      ${makeNumCell(i,'truoc_vat')}
+      ${makeCell(i,'pct_vat')}
+      ${makeNumCell(i,'tien_vat')}
+      ${makeNumCell(i,'sau_vat')}
+      ${makeCell(i,'hang_hoa')}
+      ${makeCell(i,'loai_hd')}
+      ${makeCell(i,'loai_chi_phi')}
+      ${makeCell(i,'phan_loai')}
+    `;
+    tbody.appendChild(tr);
+  });
+
+  updateStats();
+  updateBadge();
+}
+
+function makeCell(i, key) {
+  const v = rows[i][key] ?? '';
+  return `<td class="editable" ondblclick="editCell(this,${i},'${key}')" title="Double-click để sửa">${escHtml(String(v))}</td>`;
+}
+function makeNumCell(i, key) {
+  const v = rows[i][key] ?? 0;
+  return `<td class="num editable" ondblclick="editCell(this,${i},'${key}')" title="Double-click để sửa">${fmt(v)}</td>`;
+}
+function fmt(n) { return Number(n).toLocaleString('vi-VN'); }
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function editCell(td, i, key) {
+  const cur = rows[i][key] ?? '';
+  td.innerHTML = `<input class="cell-input" value="${escHtml(String(cur))}" onblur="saveCell(this,${i},'${key}')" onkeydown="if(event.key==='Enter')this.blur()" />`;
+  td.querySelector('input').focus();
+}
+function saveCell(input, i, key) {
+  const v = input.value;
+  rows[i][key] = isNaN(v) || v === '' ? v : Number(v);
+  renderTable();
+}
+
+function updateStats() {
+  document.getElementById('stat-count').textContent = rows.length;
+  const total = rows.reduce((s,r) => s + (Number(r.sau_vat)||0), 0);
+  document.getElementById('stat-total').textContent = fmt(total);
+}
+function updateBadge() {
+  document.getElementById('counter-badge').textContent = rows.length + ' hóa đơn';
+}
+
+// ---- Export Excel ----
+function exportExcel() {
+  if (!rows.length) { showToast('⚠️ Chưa có dữ liệu để xuất', 'warn'); return; }
+
+  const header = ['STT','Ngày','Nhà cung cấp','Số hoá đơn','Số tiền trước VAT','% VAT','Tiền VAT','Số tiền sau VAT','Hàng hoá','Loại hoá đơn','Loại chi phí','Phân loại hoá đơn'];
+  const data = [header, ...rows.map((r,i) => [
+    i+1,
+    r.ngay,
+    r.nha_cung_cap,
+    r.so_hd,
+    Number(r.truoc_vat)||0,
+    Number(r.pct_vat)||0,
+    Number(r.tien_vat)||0,
+    Number(r.sau_vat)||0,
+    r.hang_hoa,
+    r.loai_hd || 'Điện tử',
+    r.loai_chi_phi,
+    r.phan_loai
+  ])];
+
+  const ws = XLSX.utils.aoa_to_sheet(data);
+
+  // Column widths
+  ws['!cols'] = [5,12,40,15,18,8,16,18,45,12,20,20].map(w=>({wch:w}));
+
+  // Style header row
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let C = range.s.c; C <= range.e.c; C++) {
+    const addr = XLSX.utils.encode_cell({r:0,c:C});
+    if (!ws[addr]) continue;
+    ws[addr].s = { font:{bold:true,color:{rgb:'FFFFFF'}}, fill:{fgColor:{rgb:'1F6B3A'}}, alignment:{horizontal:'center'} };
+  }
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'T3.2026');
+
+  const date = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `HoaDon_${date}.xlsx`);
+  showToast(`✅ Đã xuất ${rows.length} hóa đơn`, 'ok');
+}
+
+// ---- Clear ----
+function clearAll() {
+  if (!confirm('Xóa toàn bộ dữ liệu đã trích xuất?')) return;
+  rows = [];
+  queue = [];
+  document.getElementById('file-list').innerHTML = '';
+  document.getElementById('file-queue-wrap').style.display = 'none';
+  document.getElementById('result-wrap').style.display = 'none';
+  document.getElementById('file-input').value = '';
+  updateBadge();
+}
+
+// ---- Toast ----
+function showToast(msg, type) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = msg;
+  if (type === 'spin') t.innerHTML = `<div class="spinner"></div>${msg}`;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+</script>
+</body>
+</html>
