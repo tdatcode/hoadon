@@ -60,4 +60,4 @@ MIT License - Tự do sử dụng cho mục đích cá nhân và thương mại.
 
 ---
 
-Phát triển bởi **Lucky Star** 🌟
+Phát triển bởi **tdat code** 🌟
