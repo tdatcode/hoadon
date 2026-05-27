@@ -298,6 +298,27 @@
     font-size: 12px; color: rgba(245,158,11,.9);
     margin-top: 12px; line-height: 1.6;
   }
+
+  .merge-panel {
+    background: rgba(14,165,233,.06);
+    border: 1px solid rgba(14,165,233,.2);
+    border-radius: 12px; padding: 16px 20px;
+    margin-top: 16px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .merge-icon { font-size: 24px; }
+  .merge-info { flex: 1; min-width: 200px; }
+  .merge-title { font-size: 13px; font-weight: 600; color: var(--accent2); }
+  .merge-desc { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .btn-merge {
+    background: rgba(14,165,233,.12); color: var(--accent2);
+    border: 1px solid rgba(14,165,233,.3);
+    border-radius: 8px; padding: 8px 16px;
+    font-size: 12px; font-weight: 700; cursor: pointer;
+    transition: all .2s; display: flex; align-items: center; gap: 6px;
+  }
+  .btn-merge:hover { background: rgba(14,165,233,.2); }
+  .btn-merge:disabled { opacity: .4; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -344,6 +365,24 @@
       💡 <strong>Cách dùng:</strong> (1) Nhập API key Anthropic ở trên → Lưu. (2) Kéo thả hoặc chọn các file PDF hóa đơn. (3) AI tự động đọc & điền dữ liệu. (4) Kiểm tra bảng, chỉnh sửa nếu cần. (5) Xuất Excel đúng format.
     </div>
 
+    <!-- Merge panel -->
+    <div class="merge-panel">
+      <div class="merge-icon">🔄</div>
+      <div class="merge-info">
+        <div class="merge-title">Gộp nhiều lần trích xuất</div>
+        <div class="merge-desc">Lưu dữ liệu tạm → Trích xuất thêm → Gộp tất cả → Sắp xếp theo ngày</div>
+      </div>
+      <button class="btn-merge" onclick="saveTempData()" id="btn-save-temp">
+        💾 Lưu tạm (<span id="temp-count">0</span>)
+      </button>
+      <button class="btn-merge" onclick="loadAndMerge()" id="btn-merge">
+        🔗 Gộp dữ liệu đã lưu
+      </button>
+      <button class="btn-merge" onclick="clearTempData()">
+        🗑️ Xóa dữ liệu tạm
+      </button>
+    </div>
+
     <!-- File queue -->
     <div id="file-queue-wrap" style="display:none">
       <div class="section-title">Danh sách file</div>
@@ -377,6 +416,7 @@
 
       <div class="actions">
         <button class="btn btn-ghost" onclick="clearAll()">🗑 Xóa tất cả</button>
+        <button class="btn btn-ghost" onclick="sortByDate()">📅 Sắp xếp theo ngày</button>
         <button class="btn btn-primary" id="export-btn" onclick="exportExcel()">
           📥 Xuất Excel (.xlsx)
         </button>
@@ -413,6 +453,7 @@ function saveKey() {
 window.addEventListener('load', () => {
   const k = localStorage.getItem('ls_api_key');
   if (k) document.getElementById('api-key').value = k;
+  updateTempCount();
 });
 
 // ---- Drag & Drop ----
@@ -716,6 +757,94 @@ function showToast(msg, type) {
   if (type === 'spin') t.innerHTML = `<div class="spinner"></div>${msg}`;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 3500);
+}
+
+// ---- Temp Data Management ----
+function saveTempData() {
+  if (!rows.length) {
+    showToast('⚠️ Chưa có dữ liệu để lưu', 'warn');
+    return;
+  }
+  
+  // Lấy dữ liệu tạm hiện tại
+  const existing = JSON.parse(localStorage.getItem('ls_temp_invoices') || '[]');
+  
+  // Gộp với dữ liệu mới
+  const merged = [...existing, ...rows];
+  
+  // Lưu vào localStorage
+  localStorage.setItem('ls_temp_invoices', JSON.stringify(merged));
+  
+  showToast(`✅ Đã lưu ${rows.length} hóa đơn (Tổng: ${merged.length})`, 'ok');
+  updateTempCount();
+}
+
+function loadAndMerge() {
+  const temp = JSON.parse(localStorage.getItem('ls_temp_invoices') || '[]');
+  
+  if (!temp.length) {
+    showToast('⚠️ Chưa có dữ liệu tạm nào', 'warn');
+    return;
+  }
+  
+  // Gộp dữ liệu tạm với dữ liệu hiện tại
+  rows = [...temp, ...rows];
+  
+  // Sắp xếp theo ngày
+  sortByDate();
+  
+  showToast(`✅ Đã gộp ${temp.length} hóa đơn từ dữ liệu tạm`, 'ok');
+  renderTable();
+}
+
+function clearTempData() {
+  const temp = JSON.parse(localStorage.getItem('ls_temp_invoices') || '[]');
+  
+  if (!temp.length) {
+    showToast('⚠️ Chưa có dữ liệu tạm nào', 'warn');
+    return;
+  }
+  
+  if (!confirm(`Xóa ${temp.length} hóa đơn đã lưu tạm?`)) return;
+  
+  localStorage.removeItem('ls_temp_invoices');
+  updateTempCount();
+  showToast('✅ Đã xóa dữ liệu tạm', 'ok');
+}
+
+function updateTempCount() {
+  const temp = JSON.parse(localStorage.getItem('ls_temp_invoices') || '[]');
+  document.getElementById('temp-count').textContent = temp.length;
+}
+
+// ---- Sort by Date ----
+function sortByDate() {
+  if (!rows.length) {
+    showToast('⚠️ Chưa có dữ liệu để sắp xếp', 'warn');
+    return;
+  }
+  
+  rows.sort((a, b) => {
+    const dateA = parseVietnameseDate(a.ngay);
+    const dateB = parseVietnameseDate(b.ngay);
+    return dateA - dateB;
+  });
+  
+  renderTable();
+  showToast('✅ Đã sắp xếp theo ngày', 'ok');
+}
+
+function parseVietnameseDate(dateStr) {
+  // Format: DD/MM/YYYY
+  if (!dateStr) return new Date(0);
+  const parts = dateStr.split('/');
+  if (parts.length !== 3) return new Date(0);
+  
+  const day = parseInt(parts[0]);
+  const month = parseInt(parts[1]) - 1; // Month is 0-indexed
+  const year = parseInt(parts[2]);
+  
+  return new Date(year, month, day);
 }
 </script>
 </body>
