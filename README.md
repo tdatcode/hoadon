@@ -4,7 +4,7 @@ Hệ thống tự động nhập hóa đơn đầu vào sử dụng AI (OpenAI G
 
 ## 🌐 Demo trực tuyến
 
-👉 **[Truy cập tại đây](https://tdatcode.github.io/hoadon.git/)**
+👉 **[Truy cập tại đây](https://tdatcode.github.io/hoadon/)**
 
 ## ✨ Tính năng
 
